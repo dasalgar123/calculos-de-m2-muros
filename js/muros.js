@@ -9,7 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
             propietario: '',
             fecha: new Date().toISOString().split('T')[0], // Fecha automática en formato YYYY-MM-DD
             actividad: 'MUROS LADRILLO LIMPIO',
-            responsable: ''
+            responsable: '',
+            imagen: null
         };
 
     const pdfForm = document.getElementById('pdfForm');
@@ -62,6 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <label for="responsable">Responsable/Ejecutor:</label>
                     <input type="text" id="responsable" placeholder="Ingrese el responsable" style="width: 100%; padding: 5px;">
                 </div>
+                <div>
+                    <label for="imagen">Imagen del Proyecto:</label>
+                    <input type="file" id="imagen" accept="image/*" style="width: 100%; padding: 5px;">
+                </div>
             </div>
         `;
         
@@ -93,10 +98,31 @@ document.addEventListener('DOMContentLoaded', () => {
             proyectoData.responsable = e.target.value;
             guardarDatosAutomaticamente();
         });
+        document.getElementById('imagen').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    proyectoData.imagen = event.target.result;
+                    console.log('Imagen cargada:', proyectoData.imagen.substring(0, 50) + '...');
+                    guardarDatosAutomaticamente();
+                    // Forzar actualización de la tabla para mostrar la imagen
+                    if (medicionesEntreEjes.length > 0) {
+                        renderTabla();
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        });
     }
 
+    // Variable para controlar guardado automático
+    let guardadoAutomatico = false;
+    
     // Función para guardar datos automáticamente
     function guardarDatosAutomaticamente() {
+        if (!guardadoAutomatico) return; // Solo guardar si está activado
+        
         const datosParaGuardar = {
             proyectoData,
             medicionesEntreEjes,
@@ -421,18 +447,76 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function exportarPDF() {
         const filas = document.querySelectorAll('#tabla table tr');
-        let rows = [];
-        filas.forEach(tr => {
-            let row = [];
-            tr.querySelectorAll('th,td').forEach(td => {
-                let val = td.querySelector('input') ? td.querySelector('input').value : td.textContent;
-                row.push(val);
+        let datos = [];
+        for (let i = 1; i < filas.length - 1; i++) {
+            const celdas = filas[i].querySelectorAll('td');
+            const eje = celdas[0].textContent.trim();
+            const ejeInicio = celdas[4].querySelector('input').value.trim();
+            const ejeFin = celdas[5].querySelector('input').value.trim();
+            const distancia = parseFloat(celdas[1].querySelector('input').value.replace(',', '.'));
+            const altura = parseFloat(celdas[2].querySelector('input').value.replace(',', '.'));
+            const area = parseFloat(celdas[3].textContent);
+            const descripcion = celdas[7].querySelector('input').value;
+            datos.push({eje, ejeInicio, ejeFin, distancia, altura, area, descripcion});
+        }
+        const totalArea = filas[filas.length-1].querySelectorAll('td')[1].textContent;
+        const doc = new window.jspdf.jsPDF({orientation: 'portrait', unit: 'mm', format: 'a4'});
+        let y = 10;
+        // Imagen grande
+        if (proyectoData.imagen) {
+            const img = new window.Image();
+            img.src = proyectoData.imagen;
+            img.onload = function() {
+                const pageWidth = 180; // mm (A4 width minus margins)
+                const ratio = img.width / img.height;
+                const imgWidth = pageWidth;
+                const imgHeight = imgWidth / ratio;
+                doc.addImage(proyectoData.imagen, 'JPEG', 15, y, imgWidth, imgHeight);
+                y += imgHeight + 5;
+                agregarInfoYTabla();
+            };
+        } else {
+            agregarInfoYTabla();
+        }
+        function agregarInfoYTabla() {
+            // Título
+            doc.setFontSize(18);
+            doc.text('INFORME DE MUROS', 105, y, {align: 'center'});
+            y += 10;
+            // Info proyecto
+            doc.setFontSize(12);
+            if (proyectoData.titulo) { doc.text(`Título: ${proyectoData.titulo}`, 15, y); y += 8; }
+            if (proyectoData.area) { doc.text(`Área: ${proyectoData.area}`, 15, y); y += 8; }
+            if (proyectoData.propietario) { doc.text(`Propietario: ${proyectoData.propietario}`, 15, y); y += 8; }
+            if (proyectoData.fecha) { doc.text(`Fecha: ${proyectoData.fecha}`, 15, y); y += 8; }
+            if (proyectoData.actividad) { doc.text(`Actividad: ${proyectoData.actividad}`, 15, y); y += 8; }
+            if (proyectoData.responsable) { doc.text(`Responsable: ${proyectoData.responsable}`, 15, y); y += 10; }
+            // Tabla
+            const headers = ['ITEM', 'Distancia', 'Altura', 'Área', 'EJE', 'Inicia Eje', 'Termina Eje', 'Descripción'];
+            const body = datos.map(d => [
+                d.eje,
+                d.distancia.toFixed(2),
+                d.altura.toFixed(2),
+                d.area.toFixed(2),
+                d.ejeInicio,
+                d.ejeInicio,
+                d.ejeFin,
+                d.descripcion
+            ]);
+            doc.autoTable({
+                head: [headers],
+                body: body,
+                startY: y,
+                margin: {top: 10},
+                styles: {fontSize: 8},
+                headStyles: {fillColor: [66, 139, 202]}
             });
-            rows.push(row);
-        });
-        const doc = new window.jspdf.jsPDF({orientation: 'landscape'});
-        doc.autoTable({ head: [rows[0]], body: rows.slice(1) });
-        doc.save('muros-tabla.pdf');
+            // Total
+            const finalY = doc.lastAutoTable.finalY + 10;
+            doc.setFontSize(14);
+            doc.text(`TOTAL ÁREA: ${totalArea}`, 15, finalY);
+            doc.save('muros-tabla.pdf');
+        }
     }
 
     function renderTabla() {
@@ -443,17 +527,20 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Información del proyecto
         let proyectoInfo = '';
-        if (proyectoData.titulo || proyectoData.area || proyectoData.propietario || proyectoData.fecha || proyectoData.actividad || proyectoData.responsable) {
+        if (proyectoData.titulo || proyectoData.area || proyectoData.propietario || proyectoData.fecha || proyectoData.actividad || proyectoData.responsable || proyectoData.imagen) {
             proyectoInfo = `
                 <div style="background-color: #f0f0f0; padding: 15px; margin-bottom: 20px; border-radius: 5px; border: 1px solid #ddd;">
                     <h3 style="margin-top: 0; color: #333;">Información del Proyecto</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-                        ${proyectoData.titulo ? `<div><strong>Título:</strong> ${proyectoData.titulo}</div>` : ''}
-                        ${proyectoData.area ? `<div><strong>Área:</strong> ${proyectoData.area}</div>` : ''}
-                        ${proyectoData.propietario ? `<div><strong>Propietario:</strong> ${proyectoData.propietario}</div>` : ''}
-                        ${proyectoData.fecha ? `<div><strong>Fecha:</strong> ${proyectoData.fecha}</div>` : ''}
-                        ${proyectoData.actividad ? `<div><strong>Actividad:</strong> ${proyectoData.actividad}</div>` : ''}
-                        ${proyectoData.responsable ? `<div><strong>Responsable:</strong> ${proyectoData.responsable}</div>` : ''}
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                            ${proyectoData.titulo ? `<div><strong>Título:</strong> ${proyectoData.titulo}</div>` : ''}
+                            ${proyectoData.area ? `<div><strong>Área:</strong> ${proyectoData.area}</div>` : ''}
+                            ${proyectoData.propietario ? `<div><strong>Propietario:</strong> ${proyectoData.propietario}</div>` : ''}
+                            ${proyectoData.fecha ? `<div><strong>Fecha:</strong> ${proyectoData.fecha}</div>` : ''}
+                            ${proyectoData.actividad ? `<div><strong>Actividad:</strong> ${proyectoData.actividad}</div>` : ''}
+                            ${proyectoData.responsable ? `<div><strong>Responsable:</strong> ${proyectoData.responsable}</div>` : ''}
+                        </div>
+                        ${proyectoData.imagen ? `<div style="text-align: center;"><strong>Imagen del Proyecto:</strong><br><img src="${proyectoData.imagen}" style="max-width: 200px; max-height: 150px; border: 1px solid #ccc; border-radius: 5px; margin-top: 10px;"></div>` : ''}
                     </div>
                 </div>
             `;
@@ -486,6 +573,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         html += '<div style="margin-top: 20px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">';
         html += '<h4 style="margin-top: 0;">Gestión de archivos:</h4>';
+        html += '<button id="guardadoAutoBtn" style="background-color: #ff9800; color: white; margin-bottom: 10px;">Activar Guardado Automático</button>';
+        html += '<button id="generarInformeBtn" style="background-color: #2196F3; color: white; margin-bottom: 10px;">Generar Informe con Imagen</button>';
+        html += '<button id="refrescarVistaBtn" style="background-color: #9C27B0; color: white; margin-bottom: 10px;">Refrescar Vista</button>';
         html += '<button id="guardarJsonBtn">Guardar JSON</button>';
         html += '<button id="guardarDistanciasBtn" style="margin-left:10px;">Guardar solo distancias</button>';
         html += '<button id="cargarJsonBtn" style="margin-left:10px; background-color: #4CAF50; color: white;">Cargar JSON guardado</button>';
@@ -494,6 +584,9 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '<button id="limpiarDatosBtn" style="margin-left:10px; background-color: #ff4444; color: white;">Limpiar datos guardados</button>';
         html += '</div>';
         pdfPreview.innerHTML = html;
+        document.getElementById('guardadoAutoBtn').onclick = toggleGuardadoAutomatico;
+        document.getElementById('generarInformeBtn').onclick = generarInformeConImagen;
+        document.getElementById('refrescarVistaBtn').onclick = refrescarVista;
         document.getElementById('guardarJsonBtn').onclick = guardarJSON;
         document.getElementById('guardarDistanciasBtn').onclick = guardarSoloDistanciasJSON;
         document.getElementById('cargarJsonBtn').onclick = cargarArchivoJSON;
@@ -558,6 +651,117 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
         input.click();
+    }
+
+    // Función para generar informe con imagen
+    function generarInformeConImagen() {
+        const filas = document.querySelectorAll('#tabla table tr');
+        let datos = [];
+        for (let i = 1; i < filas.length - 1; i++) {
+            const celdas = filas[i].querySelectorAll('td');
+            const eje = celdas[0].textContent.trim();
+            const ejeInicio = celdas[4].querySelector('input').value.trim();
+            const ejeFin = celdas[5].querySelector('input').value.trim();
+            const distancia = parseFloat(celdas[1].querySelector('input').value.replace(',', '.'));
+            const altura = parseFloat(celdas[2].querySelector('input').value.replace(',', '.'));
+            const area = parseFloat(celdas[3].textContent);
+            const descripcion = celdas[7].querySelector('input').value;
+            datos.push({eje, ejeInicio, ejeFin, distancia, altura, area, descripcion});
+        }
+        
+        const totalArea = filas[filas.length-1].querySelectorAll('td')[1].textContent;
+        const fecha = new Date();
+        const pad = n => n.toString().padStart(2, '0');
+        const nombre = `informe-muros-${fecha.getFullYear()}${pad(fecha.getMonth()+1)}${pad(fecha.getDate())}-${pad(fecha.getHours())}${pad(fecha.getMinutes())}${pad(fecha.getSeconds())}.pdf`;
+        
+        // Crear PDF con imagen
+        const doc = new window.jspdf.jsPDF({orientation: 'portrait'});
+        
+        // Agregar imagen si existe
+        if (proyectoData.imagen) {
+            try {
+                doc.addImage(proyectoData.imagen, 'JPEG', 15, 15, 50, 30);
+                console.log('Imagen agregada al PDF');
+            } catch (error) {
+                console.error('Error al agregar imagen al PDF:', error);
+            }
+        } else {
+            console.log('No hay imagen para agregar al PDF');
+        }
+        
+        // Título del informe
+        doc.setFontSize(20);
+        doc.text('INFORME DE MUROS', 105, 20, {align: 'center'});
+        
+        // Información del proyecto
+        doc.setFontSize(12);
+        let y = 60;
+        if (proyectoData.titulo) doc.text(`Título: ${proyectoData.titulo}`, 15, y);
+        y += 10;
+        if (proyectoData.area) doc.text(`Área: ${proyectoData.area}`, 15, y);
+        y += 10;
+        if (proyectoData.propietario) doc.text(`Propietario: ${proyectoData.propietario}`, 15, y);
+        y += 10;
+        if (proyectoData.fecha) doc.text(`Fecha: ${proyectoData.fecha}`, 15, y);
+        y += 10;
+        if (proyectoData.actividad) doc.text(`Actividad: ${proyectoData.actividad}`, 15, y);
+        y += 10;
+        if (proyectoData.responsable) doc.text(`Responsable: ${proyectoData.responsable}`, 15, y);
+        y += 20;
+        
+        // Tabla de mediciones
+        const headers = ['ITEM', 'Distancia', 'Altura', 'Área', 'Inicia Eje', 'Termina Eje', 'Descripción'];
+        const body = datos.map(d => [
+            d.eje,
+            d.distancia.toFixed(2),
+            d.altura.toFixed(2),
+            d.area.toFixed(2),
+            d.ejeInicio,
+            d.ejeFin,
+            d.descripcion
+        ]);
+        
+        doc.autoTable({
+            head: [headers],
+            body: body,
+            startY: y,
+            margin: {top: 10},
+            styles: {fontSize: 8},
+            headStyles: {fillColor: [66, 139, 202]}
+        });
+        
+        // Total
+        const finalY = doc.lastAutoTable.finalY + 10;
+        doc.setFontSize(14);
+        doc.text(`TOTAL ÁREA: ${totalArea}`, 15, finalY);
+        
+        doc.save(nombre);
+        console.log('Informe generado:', nombre);
+    }
+
+    // Función para refrescar la vista
+    function refrescarVista() {
+        if (medicionesEntreEjes.length > 0) {
+            renderTabla();
+            alert('Vista refrescada');
+        } else {
+            alert('No hay datos para mostrar');
+        }
+    }
+
+    // Función para activar/desactivar guardado automático
+    function toggleGuardadoAutomatico() {
+        guardadoAutomatico = !guardadoAutomatico;
+        const btn = document.getElementById('guardadoAutoBtn');
+        if (guardadoAutomatico) {
+            btn.textContent = 'Desactivar Guardado Automático';
+            btn.style.backgroundColor = '#f44336';
+            alert('Guardado automático ACTIVADO');
+        } else {
+            btn.textContent = 'Activar Guardado Automático';
+            btn.style.backgroundColor = '#ff9800';
+            alert('Guardado automático DESACTIVADO');
+        }
     }
 
     // Función para limpiar datos guardados
