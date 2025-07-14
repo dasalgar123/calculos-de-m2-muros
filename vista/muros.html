@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Muros - Calcular m² desde PDF</title>
+    <link rel="stylesheet" href="../css/muros.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+    <script src="../js/muros.js" defer></script>
+</head>
+<body>
+    <form id="pdfForm">
+        <input type="file" id="pdfFile" accept="application/pdf" required>
+        <button type="submit">Procesar PDF</button>
+    </form>
+    <div>
+        <label>Altura (m): <input type="number" id="altura" step="0.01" min="0"></label>
+    </div>
+    <div id="tabla"></div>
+</body>
+</html>
